@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>J.A.R.V.I.S. | Personal AI HUD</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: monospace; }
+    body {
+      background: radial-gradient(circle at center, #061826 0%, #01060a 100%);
+      color: #00f3ff; height: 100vh; overflow: hidden;
+      display: flex; justify-content: center; align-items: center;
+    }
+    .hud {
+      width: 95%; max-width: 900px; height: 92vh;
+      border: 1px solid rgba(0, 243, 255, 0.3);
+      box-shadow: 0 0 25px rgba(0, 243, 255, 0.15) inset;
+      display: flex; flex-direction: column; justify-content: space-between; padding: 20px;
+    }
+    .top {
+      display: flex; justify-content: space-between;
+      border-bottom: 1px solid rgba(0, 243, 255, 0.3); padding-bottom: 10px;
+      font-size: 0.9rem; letter-spacing: 2px;
+    }
+    .online { color: #00ff88; text-shadow: 0 0 8px #00ff88; }
+    .core { display: flex; flex-direction: column; align-items: center; margin: auto 0; }
+    .reactor {
+      position: relative; width: 210px; height: 210px;
+      display: flex; justify-content: center; align-items: center;
+    }
+    .ring { position: absolute; border-radius: 50%; border: 2px solid transparent; }
+    .r1 { width: 210px; height: 210px; border-top: 3px solid #00f3ff; border-bottom: 3px solid #00f3ff; animation: spin 8s linear infinite; }
+    .r2 { width: 170px; height: 170px; border-left: 3px dashed #00f3ff; border-right: 3px dashed #00f3ff; animation: spinr 5s linear infinite; }
+    .r3 { width: 135px; height: 135px; border: 2px solid rgba(0, 243, 255, 0.5); box-shadow: 0 0 20px #00f3ff; }
+    .reactor.active .r3 { box-shadow: 0 0 45px #00f3ff, 0 0 80px #0088ff; transform: scale(1.08); transition: 0.3s; }
+    #micbtn {
+      width: 100px; height: 100px; border-radius: 50%;
+      background: rgba(0, 243, 255, 0.1); border: 2px solid #00f3ff;
+      color: #00f3ff; font-weight: bold; cursor: pointer; z-index: 5;
+    }
+    #micbtn:hover { background: rgba(0, 243, 255, 0.25); box-shadow: 0 0 20px #00f3ff; }
+    #statustext { margin-top: 16px; font-size: 0.85rem; letter-spacing: 1.5px; color: #8be9fd; }
+    .term {
+      border: 1px solid rgba(0, 243, 255, 0.3); background: rgba(0, 15, 25, 0.7);
+      padding: 15px; height: 34%; display: flex; flex-direction: column; justify-content: space-between;
+    }
+    #chatlog { overflow-y: auto; height: 75%; font-size: 0.9rem; line-height: 1.5; }
+    .usermsg { color: #fff; margin-bottom: 6px; }
+    .aimsg { color: #00f3ff; margin-bottom: 8px; }
+    .inp { display: flex; gap: 8px; }
+    input { flex: 1; background: rgba(0, 243, 255, 0.08); border: 1px solid #00f3ff; color: #fff; padding: 8px 12px; outline: none; }
+    button { background: rgba(0, 243, 255, 0.15); border: 1px solid #00f3ff; color: #00f3ff; padding: 8px 14px; cursor: pointer; font-weight: bold; }
+    button:hover { background: #00f3ff; color: #000; }
+    .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.85); display: flex; justify-content: center; align-items: center; z-index: 20; }
+    .hidden { display: none; }
+    .mcontent { background: #03121c; border: 1px solid #00f3ff; padding: 25px; width: 90%; max-width: 400px; text-align: center; }
+    .mcontent p { font-size: 0.8rem; margin: 10px 0 15px; color: #a0e9ff; }
+    .mactions { margin-top: 15px; display: flex; justify-content: center; gap: 10px; }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+    @keyframes spinr { 100% { transform: rotate(-360deg); } }
+  </style>
+</head>
+<body>
+  <div class="hud">
+    <div class="top">
+      <div>SYSTEM: <span class="online">ONLINE</span></div>
+      <div id="clock">00:00:00</div>
+      <div id="battery">PWR: 100%</div>
+    </div>
+
+    <div class="core">
+      <div class="reactor" id="reactor">
+        <div class="ring r1"></div>
+        <div class="ring r2"></div>
+        <div class="ring r3"></div>
+        <button id="micbtn">INITIATE</button>
+      </div>
+      <p id="statustext">Click the Core to Activate Voice Protocol</p>
+    </div>
+
+    <div class="term">
+      <div id="chatlog">
+        <p class="aimsg">[J.A.R.V.I.S.]: Systems initialized. Awaiting your command, Boss.</p>
+      </div>
+      <div class="inp">
+        <input type="text" id="textinput" placeholder="Type command or speak...">
+        <button id="sendbtn">EXEC</button>
+        <button id="keybtn">API KEY</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="apimodal" class="modal hidden">
+    <div class="mcontent">
+      <h3>ENTER GROQ API KEY</h3>
+      <p>Paste your Groq key below:</p>
+      <input type="password" id="apikeyinput" placeholder="Paste key here...">
+      <div class="mactions">
+        <button id="savekeybtn">SAVE PROTOCOL</button>
+        <button id="closemodalbtn">CANCEL</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const micBtn = document.getElementById("micbtn");
+    const r = document.getElementById("reactor");
+    const s = document.getElementById("statustext");
+    const c = document.getElementById("chatlog");
+    const t = document.getElementById("textinput");
+    const sb = document.getElementById("sendbtn");
+    const m = document.getElementById("apimodal");
+    const kb = document.getElementById("keybtn");
+    const skb = document.getElementById("savekeybtn");
+    const cmb = document.getElementById("closemodalbtn");
+    const ki = document.getElementById("apikeyinput");
+
+    let sp = false;
+    let h = [
+      {
+        role: "system",
+        content: "You are J.A.R.V.I.S., Tony Stark's AI assistant with A-to-Z real-world knowledge. Call the user Boss or Sir. Answer accurately, concisely in 2-3 sentences, in English or Hinglish. No markdown symbols."
+      }
+    ];
+
+    setInterval(() => {
+      document.getElementById("clock").innerText = new Date().toLocaleTimeString();
+    }, 1000);
+
+    if ("getBattery" in navigator) {
+      navigator.getBattery().then(b => {
+        const u = () => {
+          document.getElementById("battery").innerText = "PWR: " + Math.round(b.level * 100) + "%";
+        };
+        u();
+        b.addEventListener("levelchange", u);
+      });
+    }
+
+    function spk(x) {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(x);
+      u.pitch = 0.92;
+      u.rate = 1.03;
+      u.onstart = () => {
+        sp = true;
+        r.classList.add("active");
+      };
+      u.onend = () => {
+        sp = false;
+        r.classList.remove("active");
+      };
+      window.speechSynthesis.speak(u);
+    }
+
+    function log(a, b, u = false) {
+      const p = document.createElement("p");
+      p.className = u ? "usermsg" : "aimsg";
+      p.innerText = "[" + a + "]: " + b;
+      c.appendChild(p);
+      c.scrollTop = c.scrollHeight;
+    }
+
+    async function run(cmd) {
+      if (!cmd.trim()) return;
+      log("BOSS", cmd, true);
+      const cl = cmd.toLowerCase().trim();
+
+      if (cl.startsWith("open ")) {
+        const site = cl.replace("open ", "").trim();
+        const urls = {
+          youtube: "https://youtube.com",
+          google: "https://google.com",
+          github: "https://github.com",
+          instagram: "https://instagram.com",
+          whatsapp: "https://whatsapp.com",
+          gmail: "https://google.com"
+        };
+        if (urls[site]) {
+          const reply = "Launching " + site + " interface now, Boss.";
+          log("J.A.R.V.I.S.", reply);
+          spk(reply);
+          window.open(urls[site], "_blank");
+          return;
+        }
+      }
+
+      if (cl.startsWith("search ")) {
+        const q = cmd.slice(7).trim();
+        const reply = "Searching Google for " + q + ", Boss.";
+        log("J.A.R.V.I.S.", reply);
+        spk(reply);
+        window.open("https://google.com/search?q=" + encodeURIComponent(q), "_blank");
+        return;
+      }
+
+      const k = (localStorage.getItem("groqKey") || "").trim();
+      if (!k) {
+        const reply = "Boss, click API KEY and paste your Groq key first.";
+        log("J.A.R.V.I.S.", reply);
+        spk(reply);
+        return;
+      }
+
+      s.innerText = "PROCESSING...";
+      h.push({ role: "user", content: cmd });
+      if (h.length > 11) h = [h[0], ...h.slice(-10)];
+
+      try {
+        const res = await fetch("https://groq.com", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + k
+          },
+          body: JSON.stringify({
+            model: "llama-3.3-70b-versatile",
+            messages: h,
+            temperature: 0.7,
+            max_tokens: 250
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error?.message || "API Error");
+        }
+
+        const reply = data.choices[0].message.content.trim();
+        h.push({ role: "assistant", content: reply });
+        log("J.A.R.V.I.S.", reply);
+        spk(reply);
+        s.innerText = "SYSTEM READY";
+      } catch (err) {
+        const errMsg = "System error, Boss: " + err.message;
+        log("J.A.R.V.I.S.", errMsg);
+        spk("Apologies Boss, connection to Groq core failed.");
+        s.innerText = "ERROR - CHECK API KEY";
+      }
+    }
+
+    sb.addEventListener("click", () => {
+      run(t.value);
+      t.value = "";
+    });
+    t.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        run(t.value);
+        t.value = "";
+      }
+    });
+
+    kb.addEventListener("click", () => {
+      ki.value = localStorage.getItem("groqKey") || "";
+      m.classList.remove("hidden");
+    });
+    cmb.addEventListener("click", () => m.classList.add("hidden"));
+    skb.addEventListener("click", () => {
+      localStorage.setItem("groqKey", ki.value.trim());
+      m.classList.add("hidden");
+      const msg = "API Protocol saved and encrypted, Boss.";
+      log("J.A.R.V.I.S.", msg);
